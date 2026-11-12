@@ -13,9 +13,11 @@ under test cleans up correctly.
 ```bash
 npm install
 npm test               # both React versions
-npm run test:react19   # 2 failures: Expected 0, Received 1
+npm run test:react19   # 3 failures: Expected 0, Received 1
 npm run test:react18   # all pass
 ```
+
+### `actTimerCount.test.js`: the smallest case
 
 | Test | React 18.3.1 | React 19.2.0 |
 | --- | --- | --- |
@@ -24,6 +26,23 @@ npm run test:react18   # all pass
 | render + unmount + `await act(async)` | 0 | **1** |
 | fix: `doNotFake: ['queueMicrotask']` | 0 | 0 |
 | fix: `jest.runAllTicks()` before counting | 0 | 0 |
+
+### `slowCreationRecovery.test.js`: a realistic component test
+
+A component shows "slow" after a 30-second timer, then "created" when an
+async operation completes, clearing its timer. The test renders it, advances
+fake time inside `act`, resolves the operation inside an awaited `act`, and
+asserts `jest.getTimerCount()` is 0.
+
+| Fake timer setup | React 18.3.1 | React 19.2.0 |
+| --- | --- | --- |
+| `jest.useFakeTimers()` | 0 | **1** |
+| `jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] })` | 0 | 0 |
+| `jest.useFakeTimers({ legacyFakeTimers: true })` | 0 | 0 |
+
+Both alternatives still count a leaked `setTimeout`. Legacy fake timers do not
+fake `Date`, so `jest.setSystemTime()` throws and `Date.now()` does not move
+when timers advance.
 
 Versions: Jest 30, jest-environment-jsdom 30, @testing-library/react 16.3.0.
 
@@ -51,10 +70,11 @@ test.
 
 ## Workarounds
 
-Either leave `queueMicrotask` real:
+Either leave microtask scheduling real (add `'nextTick'` so
+`process.nextTick`-based waits also work):
 
 ```js
-jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
 ```
 
 Or flush faked microtasks before counting:
